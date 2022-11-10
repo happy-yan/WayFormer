@@ -1,0 +1,6 @@
+torch
+einops
+pytorch-lightning
+tqdm
+numpy
+dataclasses_json
