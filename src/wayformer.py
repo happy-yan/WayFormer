@@ -20,6 +20,7 @@ class Wayformer(nn.Module):
         self.args = args
         self.encoder = EarlyFusion(args)
         self.decoder = Decoder(args)
+        self.ade_list = []
     
     def forward(self, mappings: List, device) -> Tensor:
         agents = get_from_mapping(mappings, 'agents')
@@ -54,7 +55,13 @@ class Wayformer(nn.Module):
         k = trajs.shape[1]
         xy = trajs[..., :2]
         labels = repeat(labels, 'b t d -> b k t d', k=k)
+        pred_len = 30  # 每个轨迹包含轨迹点的个数
         ADEs = reduce((xy - labels)**2, 'b k t d -> b k', 'sum')
+        avg_ADEs = ADEs**0.5 / pred_len
+        self.ade_list.append(torch.mean(torch.min(avg_ADEs, dim=1)[0]))
+        minADE = sum(self.ade_list) / len(self.ade_list)
+        print(f'minADEs: {minADE}')
+
         indices = torch.min(ADEs, dim=1)[1]
         return indices
 
@@ -66,16 +73,18 @@ class WayformerPL(pl.LightningModule):
         self.args = args
         self.model = Wayformer(args)
         self.save_hyperparameters()
+        self.val_loss_list = []
+        self.train_loss_list = []
 
     def forward(self, mappings: List) -> Tensor:
         return self.model(mappings, self.device)
 
     def training_step(self, batch, batch_idx):
-        train_loss_list = []
+
         loss, _ = self(batch)
-        train_loss_list.append(loss)
-        data = pd.DataFrame(train_loss_list)
-        writer = pd.ExcelWriter('train_loss_data.xlsx')  # 写入Excel文件
+        self.train_loss_list.append(loss.item())
+        data = pd.DataFrame(self.train_loss_list)
+        writer = pd.ExcelWriter('train_loss_data2.xlsx')  # 写入Excel文件
         data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
         writer.save()
         writer.close()
@@ -86,11 +95,10 @@ class WayformerPL(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        val_loss_list = []
         loss, _ = self(batch)
-        val_loss_list.append(loss)
-        data = pd.DataFrame(val_loss_list)
-        writer = pd.ExcelWriter('val_loss_data.xlsx')  # 写入Excel文件
+        self.val_loss_list.append(loss.item())
+        data = pd.DataFrame(self.val_loss_list)
+        writer = pd.ExcelWriter('val_loss_data2.xlsx')  # 写入Excel文件
         data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
         writer.save()
         writer.close()
