@@ -7,7 +7,7 @@ import pytorch_lightning as pl
 from typing import List
 from einops import rearrange, reduce, repeat
 from math import pi, log
-
+import pandas as pd
 # from modeling.lib import EarlyFusion, Decoder
 # from utils import Args, get_from_mapping
 from lib import EarlyFusion, Decoder
@@ -34,7 +34,7 @@ class Wayformer(nn.Module):
         weights, trajs = self.decoder(memory, memory_mask)
 
         indices = self.get_closest_traj(trajs, labels)
-        cls_loss = F.cross_entropy(weights, indices, reduction='mean')
+        cls_loss = F.cross_entropy(weights, indices, reduction='mean')  ### 根据trajs和labels得到标签，进行交叉熵处理
         ind = torch.arange(batch_size, device=device)
         traj_selected = trajs[ind, indices]  # (batch_size, t, d)
         means, logvars = traj_selected.chunk(2, dim=-1)
@@ -71,7 +71,14 @@ class WayformerPL(pl.LightningModule):
         return self.model(mappings, self.device)
 
     def training_step(self, batch, batch_idx):
+        train_loss_list = []
         loss, _ = self(batch)
+        train_loss_list.append(loss)
+        data = pd.DataFrame(train_loss_list)
+        writer = pd.ExcelWriter('train_loss_data.xlsx')  # 写入Excel文件
+        data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
+        writer.save()
+        writer.close()
         self.log('train_loss', loss, prog_bar=True, batch_size=self.args.batch_size)
         # assert isinstance(loss, Tensor)
         # assert not torch.isnan(loss)
@@ -79,7 +86,14 @@ class WayformerPL(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        val_loss_list = []
         loss, _ = self(batch)
+        val_loss_list.append(loss)
+        data = pd.DataFrame(val_loss_list)
+        writer = pd.ExcelWriter('val_loss_data.xlsx')  # 写入Excel文件
+        data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
+        writer.save()
+        writer.close()
         self.log('val_loss', loss, prog_bar=True, batch_size=self.args.batch_size)
         return loss
 
