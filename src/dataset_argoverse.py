@@ -2,6 +2,7 @@ import math
 import multiprocessing
 import os
 import pickle
+import random
 from typing import Dict, List
 import zlib
 from multiprocessing import Process
@@ -383,7 +384,8 @@ class Dataset(torch.utils.data.Dataset):
                 break
             except:
                 print(f'error {idx}')
-                data_compress = self.ex_list[idx+1]
+                num = random.randint(1, idx)
+                data_compress = self.ex_list[num]
         # instance = pickle.loads(data_compress)
         return instance
 

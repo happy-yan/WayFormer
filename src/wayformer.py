@@ -84,7 +84,7 @@ class WayformerPL(pl.LightningModule):
         loss, _ = self(batch)
         self.train_loss_list.append(loss.item())
         data = pd.DataFrame(self.train_loss_list)
-        writer = pd.ExcelWriter('train_loss_data2.xlsx')  # 写入Excel文件
+        writer = pd.ExcelWriter('train_loss_data1.xlsx')  # 写入Excel文件
         data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
         writer.save()
         writer.close()
@@ -98,7 +98,7 @@ class WayformerPL(pl.LightningModule):
         loss, _ = self(batch)
         self.val_loss_list.append(loss.item())
         data = pd.DataFrame(self.val_loss_list)
-        writer = pd.ExcelWriter('val_loss_data2.xlsx')  # 写入Excel文件
+        writer = pd.ExcelWriter('val_loss_data1.xlsx')  # 写入Excel文件
         data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
         writer.save()
         writer.close()
