@@ -101,12 +101,12 @@ class Args:
     # training
     batch_size: int = 1
     do_test: bool = False
-    do_eval: bool = False
+    do_eval: bool = True
     do_train: bool = True
     learning_rate: float = 2e-4
     num_gpu: int = 2
-    max_epochs: int = 20
-    data_workers: int = 8
+    max_epochs: int = 50
+    data_workers: int = 0
     log_period: int = 100
 
     # road info
@@ -120,9 +120,9 @@ class Args:
     S_h: int = 1
     S_i: int = 31
     S_r: int = 64
-    n_head: int = 2
-    dim_feedforward: int = 512 
-    dropout: float = 0.1
+    n_head: int = 1
+    dim_feedforward: int = 1024
+    dropout: float = 0.2
     latent_query: bool = False
     lq_ratio: float = 0.5
     factorized: str = 'interleaved'
@@ -130,8 +130,8 @@ class Args:
 
     # road embedding
     sub_graph_hidden: int = 128
-    sub_graph_depth: int = 2
-    sub_graph_heads: int = 2
+    sub_graph_depth: int = 1
+    sub_graph_heads: int = 1
     sub_graph_dim_ffn: int = 256
 
     # history embedding
