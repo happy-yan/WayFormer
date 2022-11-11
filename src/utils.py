@@ -81,7 +81,7 @@ class BlockConfig:
     dim_feedforward: int
     dropout: float = 0.1
     latent_query: bool = False
-    lq_ratio: float = 0.5
+    lq_ratio: float = 0.5  ### Latent Query (R = Lout/Lin)
 
 
 @dataclass_json
