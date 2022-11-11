@@ -1,6 +1,8 @@
-torch
-einops
+torch~=1.12.1
+einops~=0.5.0
 pytorch-lightning
-tqdm
-numpy
+tqdm~=4.64.1
+numpy~=1.19.0
 dataclasses_json
+pandas~=1.4.4
+argoverse~=1.1.0
