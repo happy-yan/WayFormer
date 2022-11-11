@@ -376,9 +376,14 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.ex_list)
 
     def __getitem__(self, idx):
-
         data_compress = self.ex_list[idx]
-        instance = pickle.loads(zlib.decompress(data_compress))
+        while True:
+            try:
+                instance = pickle.loads(zlib.decompress(data_compress))
+                break
+            except:
+                print(f'error {idx}')
+                data_compress = self.ex_list[idx+1]
         # instance = pickle.loads(data_compress)
         return instance
 
