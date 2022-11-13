@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from argparse import ArgumentParser
 
 from utils import load_config, Args, batch_list_to_batch_tensors
-from modeling.wayformer import WayformerPL
+from wayformer import WayformerPL
 from dataset_argoverse import Dataset
 
 
@@ -65,7 +65,7 @@ def train_model(
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--config_dir', type=str, default='./configs/wayformer.1.json')
+    parser.add_argument('--config_dir', type=str, default='../configs/wayformer.1.json')
     args_run = parser.parse_args()
     args: Args = load_config(args_run.config_dir)
     pl.seed_everything(0)

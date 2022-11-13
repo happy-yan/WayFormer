@@ -2,9 +2,10 @@ import math
 import multiprocessing
 import os
 import pickle
+import random
 from typing import Dict, List
 import zlib
-import lz4.frame
+# import lz4.frame
 from multiprocessing import Process
 from random import choice
 from einops import rearrange
@@ -400,7 +401,8 @@ class Dataset(torch.utils.data.Dataset):
                 break
             except:
                 # print(f"error {idx}")
-                data_compress = self.ex_list[idx + 1]
+                num = random.randint(1, idx)
+                data_compress = self.ex_list[num]
         return instance
 
 if __name__ == "__main__":
