@@ -10,6 +10,7 @@ import time
 
 eps = 1e-5
 
+
 def assert_(satisfied, info=None):
     if not satisfied:
         if info is not None:
@@ -17,10 +18,12 @@ def assert_(satisfied, info=None):
         print(sys._getframe().f_code.co_filename, sys._getframe().f_back.f_lineno)
     assert satisfied
 
+
 def rotate(x, y, angle):
     res_x = x * math.cos(angle) - y * math.sin(angle)
     res_y = x * math.sin(angle) + y * math.cos(angle)
     return res_x, res_y
+
 
 def get_unit_vector(point_a, point_b):
     der_x = point_b[0] - point_a[0]
@@ -30,21 +33,27 @@ def get_unit_vector(point_a, point_b):
     der_y *= scale
     return (der_x, der_y)
 
+
 def larger(a, b):
     return a > b + eps
+
 
 def get_dis(points: np.ndarray, point_label):
     return np.sqrt(np.square((points[:, 0] - point_label[0])) + np.square((points[:, 1] - point_label[1])))
 
+
 def get_angle(x, y):
     return math.atan2(y, x)
+
 
 def get_time():
     return time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
 
+
 time_begin = get_time()
 
-def get_name(name: str='', mode: str='train', append_time=False):
+
+def get_name(name: str = '', mode: str = 'train', append_time=False):
     if name.endswith(time_begin):
         return name
     if mode == 'test' or mode == 'val':
@@ -58,16 +67,27 @@ def get_name(name: str='', mode: str='train', append_time=False):
     suffix = '.' + time_begin if append_time else ''
     return prefix + str(name) + suffix
 
+
 def get_from_mapping(mappings: List[Dict], key: str):
     return [each_map[key] for each_map in mappings]
+
 
 def load_config(config_path: str):
     with open(config_path, 'r') as f:
         config = Args.from_json(f.read())
     return config
 
+
 def batch_list_to_batch_tensors(batch):
     return [each for each in batch]
+
+
+@dataclass
+class Metrics:
+    k: int
+    minADE: float
+    minFDE: float
+    missed: int
 
 
 @dataclass_json
@@ -81,13 +101,12 @@ class BlockConfig:
     dim_feedforward: int
     dropout: float = 0.1
     latent_query: bool = False
-    lq_ratio: float = 0.5  ### Latent Query (R = Lout/Lin)
+    lq_ratio: float = 0.5
 
 
 @dataclass_json
 @dataclass
 class Args:
-
     exp_name: str
 
     # data preprocessing
@@ -96,17 +115,18 @@ class Args:
     val_data_dir: str = os.path.expanduser('~/dataset/argo/val/data')
     temp_file_dir: str = os.path.expanduser('~/dataset/argo/temp')
     core_num: int = 8
-    reuse_temp_file: bool = True
+    reuse_temp_file: bool = False
+    compress: str = 'zlib'
 
     # training
-    batch_size: int = 1
+    batch_size: int = 32
     do_test: bool = False
-    do_eval: bool = True
+    do_eval: bool = False
     do_train: bool = True
     learning_rate: float = 2e-4
     num_gpu: int = 2
-    max_epochs: int = 50
-    data_workers: int = 0
+    max_epochs: int = 20
+    data_workers: int = 8
     log_period: int = 100
 
     # road info
@@ -114,15 +134,15 @@ class Args:
     max_distance: float = 50.0
 
     # encoding
-    option: str = 'factorized'   # option = 'multi_axis' or 'factorized'
-    hidden_size: int = 256       # dim_D
+    option: str = 'factorized'  # option = 'multi_axis' or 'factorized'
+    hidden_size: int = 256  # dim_D
     dim_T: int = 20
     S_h: int = 1
     S_i: int = 31
     S_r: int = 64
-    n_head: int = 1
-    dim_feedforward: int = 1024
-    dropout: float = 0.2
+    n_head: int = 2
+    dim_feedforward: int = 512
+    dropout: float = 0.1
     latent_query: bool = False
     lq_ratio: float = 0.5
     factorized: str = 'interleaved'
@@ -130,8 +150,8 @@ class Args:
 
     # road embedding
     sub_graph_hidden: int = 128
-    sub_graph_depth: int = 1
-    sub_graph_heads: int = 1
+    sub_graph_depth: int = 2
+    sub_graph_heads: int = 2
     sub_graph_dim_ffn: int = 256
 
     # history embedding
@@ -149,7 +169,6 @@ class Args:
     output_dir: str = 'output'
 
     def __post_init__(self):
-        """Build dataset dirs"""
         # assert os.path.exists(self.train_data_dir), f'Cannot find train data dir {self.train_data_dir}'
         # assert os.path.exists(self.val_data_dir), f'Cannot find val data dir {self.val_data_dir}'
         output_dir = os.path.join(self.output_dir, self.exp_name)
@@ -158,7 +177,7 @@ class Args:
         if not os.path.exists(self.temp_file_dir):
             os.makedirs(self.temp_file_dir)
 
-    def get_block_config(self) -> List[BlockConfig]:   ### A way to improve readability.
+    def get_block_config(self) -> List[BlockConfig]:
         if self.option == 'multi_axis':
             blocks, lqs = self.get_multi_axis_blocks()
         elif self.option == 'factorized':
@@ -177,7 +196,7 @@ class Args:
 
         return result
 
-    def get_factorized_blocks(self) -> Tuple[List[str], List[bool]]:  ### Build standard encoding blocks
+    def get_factorized_blocks(self) -> Tuple[List[str], List[bool]]:
         assert self.num_blocks > 1 and self.num_blocks % 2 == 0
         repeat = self.num_blocks // 2
         if self.factorized == 'sequential':
@@ -206,10 +225,9 @@ class Args:
         else:
             lqs = [False] * self.num_blocks
         return blocks, lqs
-    
+
     def save_config(self, save_dir: str):
-        """generate JSON parameters"""
-        with open(os.path.join('../', save_dir, f'{self.exp_name}.json'), 'w') as f:
+        with open(os.path.join(save_dir, f'{self.exp_name}.json'), 'w') as f:
             f.write(self.to_json(indent=2))
 
 

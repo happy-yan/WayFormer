@@ -1,17 +1,17 @@
 import numpy as np
+import pandas as pd
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
 import pytorch_lightning as pl
 
-from typing import List
+from typing import List, Dict, Tuple
 from einops import rearrange, reduce, repeat
 from math import pi, log
-import pandas as pd
-# from modeling.lib import EarlyFusion, Decoder
-# from utils import Args, get_from_mapping
+
 from lib import EarlyFusion, Decoder
-from utils import Args, get_from_mapping
+from utils import Args, Metrics, get_from_mapping
+
 
 class Wayformer(nn.Module):
 
@@ -20,7 +20,6 @@ class Wayformer(nn.Module):
         self.args = args
         self.encoder = EarlyFusion(args)
         self.decoder = Decoder(args)
-        self.ade_list = []
     
     def forward(self, mappings: List, device) -> Tensor:
         agents = get_from_mapping(mappings, 'agents')
@@ -35,7 +34,7 @@ class Wayformer(nn.Module):
         weights, trajs = self.decoder(memory, memory_mask)
 
         indices = self.get_closest_traj(trajs, labels)
-        cls_loss = F.cross_entropy(weights, indices, reduction='mean')  ### 根据trajs和labels得到标签，进行交叉熵处理
+        cls_loss = F.cross_entropy(weights, indices, reduction='mean')
         ind = torch.arange(batch_size, device=device)
         traj_selected = trajs[ind, indices]  # (batch_size, t, d)
         means, logvars = traj_selected.chunk(2, dim=-1)
@@ -55,15 +54,24 @@ class Wayformer(nn.Module):
         k = trajs.shape[1]
         xy = trajs[..., :2]
         labels = repeat(labels, 'b t d -> b k t d', k=k)
-        pred_len = 30  # 每个轨迹包含轨迹点的个数
         ADEs = reduce((xy - labels)**2, 'b k t d -> b k', 'sum')
-        avg_ADEs = ADEs**0.5 / pred_len
-        self.ade_list.append(torch.mean(torch.min(avg_ADEs, dim=1)[0]))
-        minADE = sum(self.ade_list) / len(self.ade_list)
-        print(f'minADEs: {minADE}')
-
         indices = torch.min(ADEs, dim=1)[1]
         return indices
+    
+    @torch.no_grad()
+    def predict(self, mappings: List, device, num_query: int=-1) -> Tensor:
+        agents = get_from_mapping(mappings, 'agents')
+        matrix = get_from_mapping(mappings, 'matrix')
+        memory, memory_mask = self.encoder(agents, matrix, device)
+        scores, trajs = self.decoder(memory, memory_mask)
+        # scores: (batch_size, k)
+        # trajs: (batch_size, k, t, d)
+        k = scores.shape[1]
+        if num_query > 0 and num_query < k:
+            _, indices = torch.topk(scores, k=num_query, dim=1)
+            trajs = trajs[torch.arange(len(trajs))[:, None], indices]
+        
+        return trajs
 
 
 class WayformerPL(pl.LightningModule):
@@ -80,11 +88,10 @@ class WayformerPL(pl.LightningModule):
         return self.model(mappings, self.device)
 
     def training_step(self, batch, batch_idx):
-
         loss, _ = self(batch)
         self.train_loss_list.append(loss.item())
         data = pd.DataFrame(self.train_loss_list)
-        writer = pd.ExcelWriter('train_loss_data1.xlsx')  # 写入Excel文件
+        writer = pd.ExcelWriter('train_loss_data2.xlsx')  # 写入Excel文件
         data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
         writer.save()
         writer.close()
@@ -98,7 +105,7 @@ class WayformerPL(pl.LightningModule):
         loss, _ = self(batch)
         self.val_loss_list.append(loss.item())
         data = pd.DataFrame(self.val_loss_list)
-        writer = pd.ExcelWriter('val_loss_data1.xlsx')  # 写入Excel文件
+        writer = pd.ExcelWriter('val_loss_data2.xlsx')  # 写入Excel文件
         data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
         writer.save()
         writer.close()
@@ -115,3 +122,40 @@ class WayformerPL(pl.LightningModule):
                 "interval": "epoch",
             }
         }
+    
+    @torch.no_grad()
+    def evaluate_model(self, mappings: List, k: int=6, threshold: float=2.0) -> Metrics:
+        trajs = self.model.predict(mappings, self.device, num_query=k)
+        labels = get_from_mapping(mappings, 'labels')
+        labels = rearrange(labels, 'b t d -> b t d')
+        labels = torch.tensor(labels, device=self.device)
+        ADE = self.get_minADE_k(trajs, labels)
+        FDE, missed = self.get_minFDE_k(trajs, labels, threshold)
+
+        return Metrics(trajs.shape[1], ADE, FDE, missed)
+
+    @torch.no_grad()
+    def get_minADE_k(self, trajs: Tensor, labels: Tensor) -> float:
+        # trajs: (batch_size, k, t, d)
+        # labels: (batch_size, t, d)
+        k = trajs.shape[1]
+        xy = trajs[..., :2]
+        labels = repeat(labels, 'b t d -> b k t d', k=k)
+        ADEs = reduce((xy - labels)**2, 'b k t d -> b k t', 'sum')
+        ADEs = reduce(torch.sqrt(ADEs), 'b k t -> b k', 'mean')
+        minADEs = reduce(ADEs, 'b k -> b', 'min')
+        return minADEs.mean().item()
+    
+    @torch.no_grad()
+    def get_minFDE_k(self, trajs: Tensor, labels: Tensor, threshold: float) -> Tuple[float, int]:
+        # get minFDE and missed predictions
+        # trajs: (batch_size, k, t, d)
+        # labels: (batch_size, t, d)
+        k = trajs.shape[1]
+        xy_final = trajs[..., -1, :2]
+        labels = repeat(labels, 'b t d -> b k t d', k=k)
+        labels = labels[..., -1, :2]
+        FDEs = reduce((xy_final - labels)**2, 'b k d -> b k', 'sum')
+        FDEs = (torch.sqrt(FDEs))
+        minFDEs = reduce(FDEs, 'b k -> b', 'min')
+        return minFDEs.mean().item(), (minFDEs > threshold).sum().item()

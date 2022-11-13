@@ -10,7 +10,7 @@ from einops import parse_shape, rearrange, repeat, reduce
 from utils import Args, BlockConfig
 
 
-def merge_tensors(tensors: List[Tensor], device, max_length: int=None) -> Tuple[Tensor, float, List]:
+def merge_tensors(tensors: List[Tensor], device, max_length: int = None) -> Tuple[Tensor, float, List]:
     lengths = [t.shape[0] for t in tensors]
     if max_length is None:
         max_length = max(lengths)
@@ -20,11 +20,13 @@ def merge_tensors(tensors: List[Tensor], device, max_length: int=None) -> Tuple[
     # res: (batch_size, max_length, embedding_dim)
     return res, max_length, lengths
 
+
 def get_1D_padding_mask(lengths: List[int], max_length: int, device) -> Tensor:
     mask = torch.zeros((len(lengths), max_length), dtype=torch.bool, device=device)
     for i, length in enumerate(lengths):
         mask[i, length:] = True
     return mask
+
 
 def get_2D_padding_mask(lengths: List[List[int]], max_length1: int, max_length2: int, device) -> Tensor:
     mask = torch.zeros((len(lengths), max_length1, max_length2), dtype=torch.bool, device=device)
@@ -34,6 +36,7 @@ def get_2D_padding_mask(lengths: List[List[int]], max_length1: int, max_length2:
         for j, length2 in enumerate(len_list):
             mask[i, j, length2:] = True
     return mask
+
 
 def get_src_mask(src_key_padding_mask: Tensor, num_heads: int) -> Tensor:
     batch_size, src_len = src_key_padding_mask.shape
@@ -81,7 +84,7 @@ class Projection(nn.Module):
     def __init__(self, dim_in: int, dim_out: int) -> None:
         super(Projection, self).__init__()
         self.linear = nn.Linear(dim_in, dim_out)
-    
+
     def forward(self, x: Tensor) -> Tensor:
         x = self.linear(x)
         x = F.relu(x)
@@ -101,11 +104,11 @@ class RoadGraph(nn.Module):
         )
         self.model = nn.TransformerEncoder(layer, num_layers=config.sub_graph_depth)
         self.projeciton = Projection(config.sub_graph_hidden, config.hidden_size)
-    
+
     def forward(self, x: Tensor) -> Tensor:
         # x: (S, V, D)   V - num of vector
         x = self.model(x)
-        x = torch.max(x, dim=1)[0] # (S, D)
+        x = torch.max(x, dim=1)[0]  # (S, D)
         return self.projeciton(x)  # (S, hidden_size)
 
 
@@ -167,7 +170,7 @@ class EncoderBlock(nn.Module):
         )
         self.n_head = n_head
 
-    def forward(self, x: Tensor, mask: Tensor=None) -> Tensor:
+    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
         if x.dim() == 4:
             # for factorized blocks or first block of multi-axis
             axes_lengths = parse_shape(x, 'A T S D')
@@ -183,7 +186,7 @@ class EncoderBlock(nn.Module):
             x = rearrange(x, self.latent_pattern)
             axes_lengths = {}
         # x: [A, L, D]
-        
+
         # print('mask', mask.max().item(), mask.min().item(), mask.dtype)
         x = self.tfm_layer(x, src_mask=src_mask)
         # print(f'{x.max().item()}')
@@ -199,8 +202,8 @@ class Encoder(nn.Module):
         block_configs = config.get_block_config()
         self.blocks = nn.ModuleList([EncoderBlock(block_cfg) for block_cfg in block_configs])
         self.num_blocks = len(self.blocks)
-    
-    def forward(self, x: Tensor, mask: Tensor=None) -> Tensor:
+
+    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
         for i, block in enumerate(self.blocks):
             # print(f'encoder layer{i}: {x.max().item()}')
             x = block(x, mask)
@@ -226,15 +229,15 @@ class Decoder(nn.Module):
         self.model = nn.TransformerDecoder(layer, num_layers=config.num_decoder_blocks)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.regressor = nn.Linear(config.hidden_size, config.pred_horizon * 4)
-    
-    def forward(self, memory: Tensor, mask: Tensor=None) -> Tuple[Tensor]:
+
+    def forward(self, memory: Tensor, mask: Tensor = None) -> Tuple[Tensor]:
         target = repeat(self.initial_qs, 'k d -> b k d', b=memory.shape[0])
         if mask is not None:
             src_mask = get_src_mask(mask, self.config.n_head)
         embeddings = self.model(target, memory, memory_key_padding_mask=mask)
         cls_head = self.classifier(embeddings)
         reg_head = self.regressor(embeddings)
-        cls_head = cls_head.squeeze(-1) 
+        cls_head = cls_head.squeeze(-1)
         reg_head = rearrange(reg_head, 'b k (t c) -> b k t c', c=4)
         return cls_head, reg_head
 
@@ -253,7 +256,8 @@ class EarlyFusion(nn.Module):
         batch_size = len(matrix)
         batch_embedding = []
         for i in range(batch_size):
-            tensor = torch.from_numpy(matrix[i]).to(device)
+            # tensor = torch.from_numpy(matrix[i]).to(device)
+            tensor = torch.tensor(matrix[i], device=device)
             embedding = self.road_graph(tensor)
             batch_embedding.append(embedding)
         embeddings, max_len, lengths = merge_tensors(batch_embedding, device)
@@ -262,7 +266,7 @@ class EarlyFusion(nn.Module):
         embeddings = repeat(embeddings, 'A S D -> A T S D', T=self.config.dim_T)
         padding_mask = repeat(padding_mask, 'A S -> A T S', T=self.config.dim_T)
         return embeddings, padding_mask
-    
+
     def forward_interact_embedding(self, agents: List[List[np.ndarray]], device) -> Tuple[Tensor]:
         length_list = list()
         embedding_list = list()
@@ -288,7 +292,7 @@ class EarlyFusion(nn.Module):
         embeddings = repeat(embeddings, 'A T D -> A T 1 D')
         padding_mask = torch.zeros(batch_size, self.config.dim_T, 1, dtype=torch.bool, device=device)
         return embeddings, padding_mask
-    
+
     def forward(self, agents: List[List[np.ndarray]], matrix: List[np.ndarray], device) -> Tensor:
         road, road_mask = self.forward_road_embedding(matrix, device)
         interact, interact_mask = self.forward_interact_embedding(agents, device)

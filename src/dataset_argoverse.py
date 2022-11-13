@@ -2,9 +2,9 @@ import math
 import multiprocessing
 import os
 import pickle
-import random
 from typing import Dict, List
 import zlib
+import lz4.frame
 from multiprocessing import Process
 from random import choice
 from einops import rearrange
@@ -47,9 +47,7 @@ def get_min_distance(polygon: np.ndarray) -> float:
 def get_sub_map(args: Args, x, y, city_name, mapping: Dict=None) -> np.ndarray:
     """
     Calculate lanes which are close to (x, y) on map.
-
     Only take lanes which are no more than args.max_distance away from (x, y).
-
     """
     vectors = list()
     polyline_spans = list()
@@ -290,11 +288,27 @@ class Dataset(torch.utils.data.Dataset):
             data_dir = args.train_data_dir # data_dir - a list
         elif mode == 'val':
             data_dir = args.val_data_dir
+        elif mode == 'test':
+            raise NotImplementedError
+            data_dir = args.test_data_dir
+        else:
+            raise NotImplementedError
         self.ex_list = []
         self.args = args
 
+        if args.compress == 'zlib':
+            file_name = 'ex_list'
+            self.compress = zlib.compress
+            self.decompress = zlib.decompress
+        elif args.compress == 'lz4':
+            file_name = 'ex_list_lz4'
+            self.compress = lz4.frame.compress
+            self.decompress = lz4.frame.decompress
+        else:
+            raise NotImplementedError("compress method not implemented")
+
         if args.reuse_temp_file:
-            pickle_file = open(os.path.join(args.temp_file_dir, get_name('ex_list', mode)), 'rb')
+            pickle_file = open(os.path.join(args.temp_file_dir, get_name(file_name, mode)), 'rb')
             self.ex_list = pickle.load(pickle_file)
             pickle_file.close()
         else:
@@ -326,7 +340,8 @@ class Dataset(torch.utils.data.Dataset):
                                 lines = fin.readlines()[1:]
                             instance = argoverse_get_instance(lines, file, args)
                             if instance is not None:
-                                data_compress = zlib.compress(pickle.dumps(instance))
+                                # data_compress = zlib.compress(pickle.dumps(instance))
+                                data_compress = self.compress(pickle.dumps(instance))
                                 # data_compress = pickle.dumps(instance)
                                 # res.append(data_compress)
                                 queue_res.put(data_compress)
@@ -364,7 +379,7 @@ class Dataset(torch.utils.data.Dataset):
                 assert False
 
             # cache the ex_list
-            pickle_file = open(os.path.join(args.temp_file_dir, get_name('ex_list', mode)), 'wb')
+            pickle_file = open(os.path.join(args.temp_file_dir, get_name(file_name, mode)), 'wb')
             pickle.dump(self.ex_list, pickle_file)
             pickle_file.close()
         assert len(self.ex_list) > 0
@@ -377,19 +392,22 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.ex_list)
 
     def __getitem__(self, idx):
+
         data_compress = self.ex_list[idx]
         while True:
             try:
-                instance = pickle.loads(zlib.decompress(data_compress))
+                instance = pickle.loads(self.decompress(data_compress))
                 break
             except:
-                print(f'error {idx}')
-                num = random.randint(1, idx)
-                data_compress = self.ex_list[num]
-        # instance = pickle.loads(data_compress)
+                # print(f"error {idx}")
+                data_compress = self.ex_list[idx + 1]
         return instance
 
 if __name__ == "__main__":
     args = Args('test')
-    dataset = Dataset(args, 'val')
-    print(len(dataset))
+    args.compress = 'lz4'
+    args.reuse_temp_file = True
+    dataset = Dataset(args, 'train')
+    for _ in range(4):
+        for i in tqdm(range(len(dataset))):
+            _ = dataset[i]
