@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
@@ -81,20 +80,12 @@ class WayformerPL(pl.LightningModule):
         self.args = args
         self.model = Wayformer(args)
         self.save_hyperparameters()
-        self.val_loss_list = []
-        self.train_loss_list = []
 
     def forward(self, mappings: List) -> Tensor:
         return self.model(mappings, self.device)
 
     def training_step(self, batch, batch_idx):
         loss, _ = self(batch)
-        self.train_loss_list.append(loss.item())
-        data = pd.DataFrame(self.train_loss_list)
-        writer = pd.ExcelWriter('train_loss_data2.xlsx')  # 写入Excel文件
-        data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
-        writer.save()
-        writer.close()
         self.log('train_loss', loss, prog_bar=True, batch_size=self.args.batch_size)
         # assert isinstance(loss, Tensor)
         # assert not torch.isnan(loss)
@@ -103,12 +94,6 @@ class WayformerPL(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         loss, _ = self(batch)
-        self.val_loss_list.append(loss.item())
-        data = pd.DataFrame(self.val_loss_list)
-        writer = pd.ExcelWriter('val_loss_data2.xlsx')  # 写入Excel文件
-        data.to_excel(writer, 'page_1', float_format='%.5f')  # ‘page_1’是写入excel的sheet名
-        writer.save()
-        writer.close()
         self.log('val_loss', loss, prog_bar=True, batch_size=self.args.batch_size)
         return loss
 

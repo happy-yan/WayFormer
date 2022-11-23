@@ -5,4 +5,3 @@ tqdm~=4.64.1
 numpy~=1.19.0
 dataclasses_json
 pandas~=1.4.4
-argoverse~=1.1.0

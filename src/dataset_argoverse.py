@@ -12,7 +12,7 @@ from einops import rearrange
 
 import numpy as np
 import torch
-from argoverse.map_representation.map_api import ArgoverseMap
+# from argoverse.map_representation.map_api import ArgoverseMap
 from tqdm import tqdm
 
 from utils import rotate, larger, assert_, get_dis, get_angle, get_name, Args
@@ -401,7 +401,7 @@ class Dataset(torch.utils.data.Dataset):
                 break
             except:
                 # print(f"error {idx}")
-                num = random.randint(1, idx)
+                num = random.randint(0, idx)
                 data_compress = self.ex_list[num]
         return instance
 

@@ -4,7 +4,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies import DDPStrategy
 from torch.utils.data import DataLoader
 from argparse import ArgumentParser
-
+import os
 from utils import load_config, Args, batch_list_to_batch_tensors
 from wayformer import WayformerPL
 from dataset_argoverse import Dataset
@@ -30,7 +30,7 @@ def train_model(
         log_every_n_steps=args.log_period,
         max_epochs=args.max_epochs,
         callbacks=callbacks,
-        accelerator='gpu',
+        accelerator='cpu',
         devices=args.num_gpu,
         strategy=DDPStrategy(find_unused_parameters=False)
     )
@@ -39,7 +39,7 @@ def train_model(
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=args.data_workers,
         collate_fn=batch_list_to_batch_tensors
     )
@@ -64,6 +64,8 @@ def train_model(
 
 
 if __name__ == '__main__':
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     parser = ArgumentParser()
     parser.add_argument('--config_dir', type=str, default='../configs/wayformer.1.json')
     args_run = parser.parse_args()
